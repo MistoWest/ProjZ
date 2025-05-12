@@ -65,7 +65,7 @@ class RequestManager:
                 f"[HTTP {request_time}] " +
                 (f"[{method} {endpoint}]" if body is None else f"[{method} {endpoint}] [{len(body)} bytes]")
             )
-        async with ClientSession(base_url="https://api.projz.com" if not web else "https://www.projz.com") as session:
+        async with ClientSession(base_url="https://api.clover.space" if not web else "https://www.clover.space") as session:
             response = await session.request(
                 method,
                 endpoint,
