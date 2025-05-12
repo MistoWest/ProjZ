@@ -3,15 +3,10 @@ from ..error import ApiException
 from ..enum import EWebSocketEventType
 from ..util import SubscriptionHandler
 from ..model import ChatMessage
-from aiohttp import ClientSession
-from aiohttp import ClientWebSocketResponse
-from aiohttp import WSMsgType
-from asyncio import create_task
-from asyncio import sleep
-from asyncio import get_running_loop
+from aiohttp import ClientSession, ClientWebSocketResponse, WSMsgType
+from asyncio import create_task, sleep, get_running_loop
 from typing import Optional
-from ujson import loads
-from ujson import dumps
+from ujson import loads, dumps
 from datetime import datetime
 
 
@@ -39,11 +34,11 @@ class WebsocketListener(SubscriptionHandler):
         log_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         print(f"[WebSocket {log_time}] [{log_type}] [{message_type}] [{content_length} bytes]")
 
-    async def connect(self):
-        self.client_session = ClientSession(base_url="wss://ws.projz.com")
+    async def connect(self, sId):
+        print(sId)
+        self.client_session = ClientSession()
         self.connection = await self.client_session.ws_connect(
-            "/v1/chat/ws",
-            headers=await self.request_manager.build_headers("/v1/chat/ws")
+            f"wss://api.clover.space/v1/chat/web-ws?sId={sId}"
         )
         self.task_receiver = create_task(self.receive())
         self.task_pinger = create_task(self.ping())
@@ -59,15 +54,19 @@ class WebsocketListener(SubscriptionHandler):
     async def receive(self):
         while True:
             msg = await self.connection.receive()
-            if msg.type != WSMsgType.TEXT: continue
+            if msg.type != WSMsgType.TEXT:
+                continue
             msg_json = loads(msg.data)
+
+            print(msg_json.get("t"))
             if self.logging:
                 self._log("INCOMING", msg_json["t"], len(msg.data))
             if msg_json["t"] == EWebSocketEventType.MESSAGE.value:
                 self.broadcast(ChatMessage.from_dict(msg_json["msg"]))
-            elif msg_json["t"] == EWebSocketEventType.ACK.value:
+            elif msg_json["t"] == 2:
                 ack = msg_json["serverAck"]
-                if ack["seqId"] not in self.outgoing: continue
+                if ack["seqId"] not in self.outgoing:
+                    continue
                 if ack["apiCode"] != 0:
                     self.outgoing[ack["seqId"]].set_exception(ApiException.get(ack))
                     continue
@@ -86,14 +85,17 @@ class WebsocketListener(SubscriptionHandler):
         seq_id: Optional[int] = None,
         **kwargs
     ) -> Optional[dict]:
-        data = dumps(dict(t=request_type, **kwargs))
+        data = dumps({"t": request_type, **kwargs})
+
         if self.logging:
             self._log("OUTGOING", request_type, len(data))
         await self.connection.send_str(data)
+
         if wait_response:
-            if seq_id is None: raise ValueError("Can't wait for response without seq id parameter")
+            if seq_id is None:
+                raise ValueError("Can't wait for response without seq id parameter")
             future = get_running_loop().create_future()
+
             self.outgoing[seq_id] = future
             return await future
         return None
-
